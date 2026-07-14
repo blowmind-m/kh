@@ -6,31 +6,33 @@
     <title>Oktatás Jelenléti Ív</title>
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f4f9; color: #333; max-width: 600px; margin: 40px auto; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); background-color: white; }
-        /* A cím kinézete normál, de az egérrel ki lehet jelölni, ami elrejti a trükköt */
         h2 { border-bottom: 2px solid #007BFF; padding-bottom: 5px; margin-top: 30px; user-select: none; }
-        
         .stat-box { background-color: #e9ecef; padding: 15px; border-radius: 5px; font-size: 18px; margin-bottom: 20px; }
         .stat-box span { font-weight: bold; color: #007BFF; }
         .info-text { font-size: 16px; margin-bottom: 15px; color: #555; line-height: 1.5; }
-        
         form { display: flex; gap: 10px; margin-bottom: 20px; }
         input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
         button { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold; color: white; background-color: #007BFF; transition: 0.3s; }
         button:hover { background-color: #0056b3; }
         
-        /* Admin panel rejtve van alapértelmezetten */
         #adminPanel { display: none; background-color: #fff3cd; padding: 15px; border-radius: 5px; border: 1px solid #ffeeba; margin-top: 20px; }
         #adminPanel h3 { margin-top: 0; color: #856404; font-size: 18px; }
+        
+        /* Gombok stílusai az admin panelen */
         .btn-download { background-color: #28a745; width: 100%; margin-bottom: 10px; }
         .btn-download:hover { background-color: #218838; }
+        
+        .btn-log { background-color: #17a2b8; width: 100%; margin-bottom: 10px; }
+        .btn-log:hover { background-color: #138496; }
+        
         .btn-reset { background-color: #dc3545; width: 100%; }
         .btn-reset:hover { background-color: #c82333; }
+        
         .clickable-title { cursor: default; }
     </style>
 </head>
 <body>
 
-  
     <h2 id="mainTitle" class="clickable-title">Oktatás Jelenléti Ív</h2>
     
     <p class="info-text">Kérjük, a lentebbi mezőben add meg a teljes nevedet. A neved megadásával és elküldésével hivatalosan is igazolod, hogy részt vettél a mai oktatáson.</p>
@@ -46,21 +48,20 @@
         <p>Regisztrált résztvevők száma: <span id="submitCount">Betöltés...</span></p>
     </div>
 
-    <!-- Titkosított rész -->
     <div id="adminPanel">
         <h3>Titkos Adminisztráció</h3>
-        <p>Itt töltheted le a résztvevők listáját, vagy nullázhatod az adatbázist.</p>
+        <p>Itt töltheted le az adatokat, vagy nullázhatod az adatbázist.</p>
         <button class="btn-download" onclick="window.downloadFile()">Résztvevők letöltése (.txt)</button>
+        <!-- ÚJ GOMB A NAPLÓ LETÖLTÉSÉHEZ -->
+        <button class="btn-log" onclick="window.downloadLogs()">Látogatói napló letöltése (IP adatok)</button>
         <button class="btn-reset" onclick="window.resetData()">Minden adat nullázása</button>
     </div>
 
-    <!-- Firebase SDK betöltése modulként -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getDatabase, ref, onValue, runTransaction, push, set, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-     
-         const firebaseConfig = {
+        const firebaseConfig = {
            apiKey: "AIzaSyDEr5_opzmvZR1AoEs6diO-VeffZ0IqrVQ",
            authDomain: "kaha-5679a.firebaseapp.com",
            databaseURL: "https://kaha-5679a-default-rtdb.europe-west1.firebasedatabase.app",
@@ -70,20 +71,43 @@
           appId: "1:802575908506:web:08dc30dd1529edcd5f2923"
           };
 
-     
+
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
         const visitsRef = ref(db, 'stats/visits');
         const submitsRef = ref(db, 'stats/submits');
         const namesRef = ref(db, 'names');
+        const visitorsLogRef = ref(db, 'visitors_log');
 
-        // Oldal megnyitás számláló növelése
+        // 1. IP és User-Agent naplózása oldalbetöltéskor
+        async function logVisitorDetails() {
+            let ipAddress = "Ismeretlen";
+            try {
+                const response = await fetch('https://api.ipify.org?format=json');
+                const data = await response.json();
+                ipAddress = data.ip;
+            } catch (error) {
+                console.log("Nem sikerült lekérni az IP címet.");
+            }
+
+            const visitorInfo = {
+                ip: ipAddress,
+                userAgent: navigator.userAgent,
+                timestamp: new Date().toLocaleString('hu-HU')
+            };
+
+            push(visitorsLogRef, visitorInfo);
+        }
+        
+        logVisitorDetails();
+
+        // 2. Oldal megnyitás számláló
         runTransaction(visitsRef, (currentData) => {
             return (currentData || 0) + 1;
         });
 
-        // Számlálók valós idejű figyelése
+        // 3. Számlálók valós idejű figyelése
         onValue(visitsRef, (snapshot) => {
             document.getElementById('visitCount').innerText = snapshot.val() || 0;
         });
@@ -91,7 +115,7 @@
             document.getElementById('submitCount').innerText = snapshot.val() || 0;
         });
 
-        // Űrlap beküldése
+        // 4. Űrlap beküldése
         document.getElementById('nameForm').addEventListener('submit', (event) => {
             event.preventDefault();
             const nameInput = document.getElementById('nameInput');
@@ -109,33 +133,21 @@
             }
         });
 
-        // ==============================================================
         // REJTETT ADMIN FUNKCIÓ LOGIKÁJA
-        // ==============================================================
         let clickCount = 0;
         let clickTimer;
         
         document.getElementById('mainTitle').addEventListener('click', () => {
             clickCount++;
-            clearTimeout(clickTimer); // Nullázza az időzítőt minden kattintásnál
+            clearTimeout(clickTimer);
             
-            // Ha elérte az 5 kattintást...
             if(clickCount >= 5) {
                 const adminPanel = document.getElementById('adminPanel');
-                // Megjeleníti vagy elrejti a panelt
-                if(adminPanel.style.display === 'none' || adminPanel.style.display === '') {
-                    adminPanel.style.display = 'block';
-                } else {
-                    adminPanel.style.display = 'none'; 
-                }
-                clickCount = 0; // Számláló nullázása a siker után
+                adminPanel.style.display = adminPanel.style.display === 'block' ? 'none' : 'block';
+                clickCount = 0;
             }
             
-            // Ha a felhasználó nem kattint újra 1 másodpercen belül, a számláló törlődik
-            // Így megakadályozzuk, hogy valaki véletlenül kattintson 5-öt egész nap alatt
-            clickTimer = setTimeout(() => {
-                clickCount = 0;
-            }, 1000); 
+            clickTimer = setTimeout(() => { clickCount = 0; }, 1000); 
         });
 
         // Nevek letöltése
@@ -162,15 +174,44 @@
             }
         };
 
+        // ÚJ FUNKCIÓ: Látogatói napló letöltése
+        window.downloadLogs = async function() {
+            const snapshot = await get(visitorsLogRef);
+            if (snapshot.exists()) {
+                const logsObj = snapshot.val();
+                const logsArray = Object.values(logsObj);
+                
+                // Formázzuk az adatokat szép, olvasható sorokká
+                const textContent = logsArray.map(log => 
+                    `[${log.timestamp}] IP: ${log.ip} | Eszköz: ${log.userAgent}`
+                ).join('\n');
+                
+                const blob = new Blob([textContent], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'latogatoi_naplo.txt';
+                document.body.appendChild(a);
+                a.click();
+                
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                alert("Még nincs rögzített látogatói adat.");
+            }
+        };
+
         // Adatok nullázása
         window.resetData = function() {
-            if(confirm("Biztosan törölni akarod az összes résztvevőt és a statisztikát? Ezt nem lehet visszavonni!")) {
+            if(confirm("Biztosan törölni akarod az összes résztvevőt, a statisztikát és a látogatói naplót? Ezt nem lehet visszavonni!")) {
                 set(ref(db, '/'), {
                     stats: { visits: 0, submits: 0 },
-                    names: null
+                    names: null,
+                    visitors_log: null // A naplót is ürítjük
                 }).then(() => {
                     alert("Adatbázis sikeresen nullázva!");
-                    document.getElementById('adminPanel').style.display = 'none'; // Nullázás után eltüntetjük a panelt
+                    document.getElementById('adminPanel').style.display = 'none';
                 });
             }
         };
